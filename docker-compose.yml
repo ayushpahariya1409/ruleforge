@@ -1,0 +1,36 @@
+# Docker Compose — Rule Based Engine (Application Tier)
+# This configuration only runs the application services.
+# Databases are managed externally (MongoDB Atlas & Aiven MySQL)
+
+services:
+  # ── Backend (Express API) ───────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: rule-engine-backend
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    env_file:
+      - ./backend/.env
+    environment:
+      - NODE_ENV=production
+    volumes:
+      - backend_uploads:/app/uploads
+
+  # ── Frontend (React + Nginx) ────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: rule-engine-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+
+# ── Persistent Volumes ──────────────────────────────────
+volumes:
+  backend_uploads:

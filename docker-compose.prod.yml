@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  backend:
+    image: ${DOCKERHUB_USERNAME}/rule-engine-backend:latest
+    container_name: rule-engine-backend
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    env_file:
+      - .env
+    volumes:
+      - backend_uploads:/app/uploads
+
+  frontend:
+    image: ${DOCKERHUB_USERNAME}/rule-engine-frontend:latest
+    container_name: rule-engine-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+volumes:
+  backend_uploads:
