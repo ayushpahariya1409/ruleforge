@@ -101,21 +101,32 @@ jobs:
             # Export DOCKERHUB_USERNAME so docker-compose.prod.yml can resolve it
             export DOCKERHUB_USERNAME=${{ secrets.DOCKERHUB_USERNAME }}
 
-            # Auto-detect docker compose command (v2 plugin vs v1 standalone)
+            # Auto-detect docker compose command
             if docker compose version > /dev/null 2>&1; then
-              DC="docker compose"
+              DC_BASE="docker compose"
             else
-              DC="docker-compose"
+              DC_BASE="docker-compose"
             fi
 
-            echo "Using: $DC"
+            # Auto-detect if sudo is needed
+            if $DC_BASE version > /dev/null 2>&1; then
+              DC="$DC_BASE"
+            else
+              DC="sudo $DC_BASE"
+            fi
 
-            # Pull latest images and restart using the production compose file
+            echo "Using command: $DC"
+
+            if [ ! -f .env ]; then
+              echo "WARNING: .env file not found in ~/RuleForge-Backend. Backend may fail to start."
+            fi
+
+            # Pull latest images and restart
             $DC -f docker-compose.prod.yml pull
             $DC -f docker-compose.prod.yml up -d --remove-orphans
 
             # Clean up old/dangling images
-            docker image prune -f
+            $DC -f docker-compose.prod.yml images -q | xargs -r docker image prune -f --filter "until=24h"
 
             # Verify containers are running
             echo ""
