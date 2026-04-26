@@ -79,7 +79,6 @@ const RuleBuilder = forwardRef(({
   rule = null,
   onSave,
   onDirtyChange, 
-  loading = false,
   preSelectedColumns = [],
 }, ref) => {
   const { data: grouped, isLoading: schemaLoading } = useSchemaGrouped();
@@ -160,47 +159,6 @@ const RuleBuilder = forwardRef(({
     onDirtyChange?.(isDirty);
   }, [isDirty, onDirtyChange]);
 
-  useImperativeHandle(ref, () => ({
-    save: handleSave
-  }));
-
-  const [sampleData, setSampleData] = useState(
-    '{\n  "field": "value"\n}'
-  );
-
-  const handleToggleColumn = (col) => {
-    setSelectedColumns((prev) => {
-      const exists = prev.some(
-        (c) => c.fieldName === col.fieldName && c.category === col.category
-      );
-      if (exists)
-        return prev.filter(
-          (c) =>
-            !(
-              c.fieldName === col.fieldName &&
-              c.category === col.category
-            )
-        );
-      return [...prev, col];
-    });
-  };
-
-  const handleRemoveColumn = (col) => {
-    setSelectedColumns((prev) =>
-      prev.filter(
-        (c) =>
-          !(
-            c.fieldName === col.fieldName &&
-            c.category === col.category
-          )
-      )
-    );
-  };
-
-  const getFieldDataType = (fieldName) =>
-    selectedColumns.find((f) => f.fieldName === fieldName)?.dataType ||
-    'string';
-
   const handleSave = () => {
     if (!ruleName.trim()) {
       toast.error('Rule name is required.');
@@ -237,6 +195,10 @@ const RuleBuilder = forwardRef(({
       conditions,
     });
   };
+
+  useImperativeHandle(ref, () => ({
+    save: handleSave
+  }));
 
   const handleTest = async () => {
     try {
@@ -471,7 +433,6 @@ const RuleBuilder = forwardRef(({
             grouped={grouped}
             selectedColumns={selectedColumns}
             onToggle={handleToggleColumn}
-            onDone={() => setShowColumnPicker(false)}
           />
         </Modal>
       )}

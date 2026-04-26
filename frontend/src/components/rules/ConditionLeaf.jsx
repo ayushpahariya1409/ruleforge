@@ -10,20 +10,13 @@ const CATEGORY_COLORS = {
 };
 
 const ConditionLeaf = ({ condition, onChange, onRemove, fields = [] }) => {
-  const [error, setError] = useState('');
-
   // Get the selected field's data type
   const selectedField = fields.find(f => f.fieldName === condition.field);
   const fieldDataType = selectedField?.dataType || 'string';
 
-  useEffect(() => {
-    if (condition.value) {
-      const msg = validateConditionValue(condition.value, fieldDataType, condition.field);
-      setError(msg);
-    } else {
-      setError('');
-    }
-  }, [condition.value, fieldDataType, condition.field]);
+  const error = condition.value 
+    ? validateConditionValue(condition.value, fieldDataType, condition.field)
+    : '';
 
   const handleChange = (e) => {
     const { name, value } = e.target;

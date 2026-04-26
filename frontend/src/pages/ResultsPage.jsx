@@ -6,10 +6,8 @@ import Spinner from '../components/shared/Spinner';
 import Modal from '../components/shared/Modal';
 import Pagination from '../components/shared/Pagination';
 import { useEvaluations, useEvaluation, useEvaluationResults } from '../hooks/useEvaluations';
-import { resultApi } from '../api/resultApi';
 import { formatDate, getMatchRate } from '../utils/formatters';
 import { useRules } from '../hooks/useRules';
-import toast from 'react-hot-toast';
 import Reveal from '../components/shared/Reveal';
 
 const DEFAULT_PAGE_SIZE = 50;

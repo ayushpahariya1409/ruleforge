@@ -5,9 +5,11 @@ const PerPageControl = ({ pageSize, onPageSizeChange, max = 100, label = "Rows p
   const [editing, setEditing] = useState(false);
   const inputRef = useRef(null);
 
-  useEffect(() => {
+  const [prevPageSize, setPrevPageSize] = useState(pageSize);
+  if (pageSize !== prevPageSize) {
+    setPrevPageSize(pageSize);
     if (!editing) setInputVal(String(pageSize));
-  }, [pageSize, editing]);
+  }
 
   const handleCommit = () => {
     const num = parseInt(inputVal, 10);

@@ -39,7 +39,7 @@ const SplashScreen = ({ isExiting, isAuthenticated }) => {
         logoRef.current.style.setProperty('--target-scale', `${scale}`);
       }
     }
-  }, [isExiting]);
+  }, [isExiting, isAuthenticated]);
 
   return (
     <div className={`fixed inset-0 z-[100] flex flex-col items-center justify-center overflow-hidden ${isExiting ? 'animate-splash-fade' : 'bg-white'}`}>

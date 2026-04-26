@@ -29,7 +29,7 @@ export const validateConditionValue = (val, type, fieldName) => {
     if (isTextField && type !== 'number' && type !== 'date' && type !== 'boolean') {
       if (valueStr.length > 50) return 'Text is too long (max 50 characters)';
       // Allow alphabets, spaces, dots, and hyphens
-      if (!/^[A-Za-z .\-]+$/.test(valueStr)) return 'Should only contain letters and spaces (no numbers)';
+      if (!/^[A-Za-z .-]+$/.test(valueStr)) return 'Should only contain letters and spaces (no numbers)';
     }
   }
   

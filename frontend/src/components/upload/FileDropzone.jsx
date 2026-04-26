@@ -3,7 +3,7 @@ import toast from 'react-hot-toast';
 import { HiOutlineCloudArrowUp, HiOutlineDocumentCheck, HiOutlineDocumentText, HiOutlineXMark } from 'react-icons/hi2';
 import Button from '../shared/Button';
 
-const FileDropzone = ({ onFileSelect, loading = false, currentFile = null }) => {
+const FileDropzone = ({ onFileSelect, currentFile = null }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [localFile, setLocalFile] = useState(null);
 

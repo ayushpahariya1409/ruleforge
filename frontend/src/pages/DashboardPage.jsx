@@ -273,12 +273,12 @@ const DashboardPage = () => {
   );
 };
 
-const StatCard = ({ title, value, subtitle, icon: Icon, iconBg, iconColor }) => {
+const StatCard = ({ title, value, subtitle, icon: StatIcon, iconBg, iconColor }) => {
   return (
     <div className="card p-4 sm:p-5 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 border border-transparent hover:border-surface-100 group h-full">
       <div className="flex items-start gap-4">
         <div className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center flex-shrink-0 transition-transform group-hover:scale-110 duration-300 ${iconBg}`}>
-          <Icon className={`w-5 h-5 ${iconColor}`} />
+          <StatIcon className={`w-5 h-5 ${iconColor}`} />
         </div>
         <div className="min-w-0">
           <p className="text-[10px] font-bold text-surface-400 uppercase tracking-[0.15em] mb-1">{title}</p>

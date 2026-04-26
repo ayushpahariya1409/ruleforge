@@ -41,7 +41,7 @@ const RulesPage = () => {
     return saved ? JSON.parse(saved) : [];
   });
   const [isColumnModalOpen, setIsColumnModalOpen] = useState(false);
-  const { data: groupedSchema, isLoading: schemaLoading } = useSchemaGrouped();
+  const { data: groupedSchema } = useSchemaGrouped();
 
   const handleCreate = () => {
     if (selectedColumns.length === 0) {
@@ -106,7 +106,7 @@ const RulesPage = () => {
       toast.success('Rule deleted successfully');
       setIsDeleteModalOpen(false);
       setRuleToDelete(null);
-    } catch (err) {
+    } catch {
       toast.error('Failed to delete rule');
     }
   };

@@ -52,7 +52,6 @@ const ExplanationPanel = ({ ruleMatch, rules = [] }) => {
 
                     // Check if this condition part matches any failed or passed item in explanation
                     const resultMatch = explanation.find(exp => {
-                      const conditionStr = `${exp.field} ${exp.operator} ${exp.expected}`;
                       return trimmedPart.includes(exp.field) && trimmedPart.includes(String(exp.expected));
                     });
 

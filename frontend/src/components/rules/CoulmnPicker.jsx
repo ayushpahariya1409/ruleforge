@@ -8,7 +8,7 @@ const CATEGORY_STYLES = {
     orders: { label: 'Orders', color: 'text-primary-400', bg: 'bg-primary-500/10', border: 'border-primary-500/30', activeBg: 'bg-primary-500/20' },
 };
 
-const ColumnPicker = ({ grouped, selectedColumns, onToggle, onDone }) => {
+const ColumnPicker = ({ grouped, selectedColumns, onToggle }) => {
     const categories = ['users', 'products', 'orders'];
 
     return (
