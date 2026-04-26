@@ -86,14 +86,23 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            cd ~/rule-forge
+            cd ~/RuleForge-Backend
 
             # Export DOCKERHUB_USERNAME so docker-compose.prod.yml can resolve it
             export DOCKERHUB_USERNAME=${{ secrets.DOCKERHUB_USERNAME }}
 
+            # Auto-detect docker compose command (v2 plugin vs v1 standalone)
+            if docker compose version > /dev/null 2>&1; then
+              DC="docker compose"
+            else
+              DC="docker-compose"
+            fi
+
+            echo "Using: $DC"
+
             # Pull latest images and restart using the production compose file
-            docker compose -f docker-compose.prod.yml pull
-            docker compose -f docker-compose.prod.yml up -d --remove-orphans
+            $DC -f docker-compose.prod.yml pull
+            $DC -f docker-compose.prod.yml up -d --remove-orphans
 
             # Clean up old/dangling images
             docker image prune -f
@@ -101,4 +110,4 @@ jobs:
             # Verify containers are running
             echo ""
             echo "=== Container Status ==="
-            docker compose -f docker-compose.prod.yml ps
+            $DC -f docker-compose.prod.yml ps
