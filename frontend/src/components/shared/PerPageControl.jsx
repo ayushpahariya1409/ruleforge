@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 
 const PerPageControl = ({ pageSize, onPageSizeChange, max = 100, label = "Rows per page:" }) => {
   const [inputVal, setInputVal] = useState(String(pageSize));

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { HiTrash, HiExclamationCircle } from 'react-icons/hi2';
 import { OPERATORS } from '../../utils/constants';
 import { validateConditionValue } from '../../utils/validation';

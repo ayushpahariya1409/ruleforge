@@ -273,6 +273,7 @@ const DashboardPage = () => {
   );
 };
 
+// eslint-disable-next-line no-unused-vars
 const StatCard = ({ title, value, subtitle, icon: StatIcon, iconBg, iconColor }) => {
   return (
     <div className="card p-4 sm:p-5 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 border border-transparent hover:border-surface-100 group h-full">
