@@ -10,25 +10,27 @@ on:
     branches: [main]
 
 jobs:
-  # ── Backend: Install, lint, validate ────────────────────
+  # ── Backend: Install, validate, health check ────────────────
   backend:
     name: Backend Checks
     runs-on: ubuntu-latest
 
     services:
+      # MySQL to match Aiven production database
       mysql:
         image: mysql:8.0
         env:
-          MYSQL_ROOT_PASSWORD: mysql@123
+          MYSQL_ROOT_PASSWORD: ci_password
           MYSQL_DATABASE: rule_engine_db
         ports:
           - 3306:3306
         options: >-
-          --health-cmd="mysqladmin ping -h localhost -u root -pmysql@123"
+          --health-cmd="mysqladmin ping -h localhost -u root -pci_password"
           --health-interval=10s
           --health-timeout=5s
           --health-retries=5
 
+      # MongoDB for metadata/results storage (mirrors Atlas in CI)
       mongodb:
         image: mongo:7
         ports:
@@ -62,25 +64,24 @@ jobs:
           MONGODB_URI: mongodb://localhost:27017/rule-engine-test
           JWT_SECRET: ci-test-secret
           JWT_EXPIRES_IN: 7d
-          DB_HOST: 127.0.0.1
-          DB_USER: root
-          DB_PASSWORD: mysql@123
-          DB_NAME: rule_engine_db
+          SQL_DB_URL: mysql://root:ci_password@localhost:3306/rule_engine_db
         run: |
           node server.js &
           SERVER_PID=$!
-          echo "Waiting for server to start..."
+          echo "⏳ Waiting for server to start..."
           for i in $(seq 1 30); do
             if curl -s http://localhost:5000/api/health > /dev/null 2>&1; then
+              echo ""
               echo "✅ Server is healthy!"
-              curl -s http://localhost:5000/api/health | cat
+              curl -s http://localhost:5000/api/health | python3 -m json.tool
               kill $SERVER_PID
               exit 0
             fi
-            echo "Attempt $i/30 — waiting..."
+            echo "  Attempt $i/30 — waiting 2s..."
             sleep 2
           done
-          echo "❌ Server failed to start"
+          echo ""
+          echo "❌ Server failed to respond after 60 seconds"
           kill $SERVER_PID 2>/dev/null
           exit 1
 

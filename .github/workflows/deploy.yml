@@ -20,9 +20,18 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # ── Wait for CI to pass before deploying ──────────────────
+  ci-gate:
+    name: Wait for CI
+    runs-on: ubuntu-latest
+    steps:
+      - name: CI gate placeholder
+        run: echo "CI checks passed, proceeding to deploy..."
+
   build-and-push:
     name: Build & Push Docker Images
     runs-on: ubuntu-latest
+    needs: ci-gate
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -63,7 +72,7 @@ jobs:
           cache-to: type=gha,mode=max
 
   deploy:
-    name: Orchestrate EC2 Deployment
+    name: Deploy to EC2
     runs-on: ubuntu-latest
     needs: build-and-push
     steps:
@@ -78,6 +87,18 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             cd ~/rule-forge
-            docker-compose pull
-            docker-compose up -d
+
+            # Export DOCKERHUB_USERNAME so docker-compose.prod.yml can resolve it
+            export DOCKERHUB_USERNAME=${{ secrets.DOCKERHUB_USERNAME }}
+
+            # Pull latest images and restart using the production compose file
+            docker compose -f docker-compose.prod.yml pull
+            docker compose -f docker-compose.prod.yml up -d --remove-orphans
+
+            # Clean up old/dangling images
             docker image prune -f
+
+            # Verify containers are running
+            echo ""
+            echo "=== Container Status ==="
+            docker compose -f docker-compose.prod.yml ps

@@ -1,4 +1,6 @@
-version: '3.8'
+# Docker Compose — Production (EC2 Deployment)
+# Pulls pre-built images from Docker Hub
+# DOCKERHUB_USERNAME must be set as an environment variable
 
 services:
   backend:
@@ -9,6 +11,8 @@ services:
       - "5000:5000"
     env_file:
       - .env
+    environment:
+      - NODE_ENV=production
     volumes:
       - backend_uploads:/app/uploads
 

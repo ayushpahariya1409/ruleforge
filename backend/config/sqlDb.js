@@ -7,10 +7,11 @@ const dialect = sql.url?.startsWith('postgres') ? 'postgres' : 'mysql';
 
 if (sql.url) {
   console.log(`🔌 Connecting to SQL via URL (${dialect})...`);
+  const isTest = process.env.NODE_ENV === 'test';
   sequelize = new Sequelize(sql.url, {
     dialect,
     logging: false,
-    dialectOptions: {
+    dialectOptions: isTest ? {} : {
       ssl: {
         rejectUnauthorized: false,
       },
