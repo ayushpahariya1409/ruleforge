@@ -1,22 +1,21 @@
 const mongoose = require('mongoose');
 
 /**
- * Temporary storage for parsed upload rows.
+ * Temporary reference to an uploaded file on disk.
+ * Stores the file path so evaluate can parse the full file server-side.
  * Auto-expires after 1 hour via MongoDB TTL index.
- * This avoids re-sending large payloads from the browser on evaluate.
  */
 const TempUploadSchema = new mongoose.Schema({
-  rows: {
-    type: mongoose.Schema.Types.Mixed, // Array of row objects
+  filePath: {
+    type: String,
     required: true,
   },
-  headers: [String],
-  totalRows: Number,
   fileName: String,
+  totalRows: Number,
   createdAt: {
     type: Date,
     default: Date.now,
-    expires: 3600, // TTL: auto-delete after 1 hour
+    expires: 3600, // TTL: auto-delete record after 1 hour
   },
 });
 

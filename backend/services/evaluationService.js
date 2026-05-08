@@ -2,12 +2,13 @@ const ruleRepository = require('../repositories/ruleRepository');
 const evaluationRepository = require('../repositories/evaluationRepository');
 const EvaluationResult = require('../models/EvaluationResult');
 const TempUpload = require('../models/TempUpload');
+const { parseExcelFile, cleanupFile } = require('../utils/excelParser');
 const { Worker } = require('worker_threads');
 const path = require('path');
 const ApiError = require('../utils/ApiError');
 
 const MAX_WORKERS = 4;
-const CHUNK_SIZE = 5000; // Reduced for even better memory reliability with massive files
+const CHUNK_SIZE = 5000;
 
 class EvaluationService {
   runWorker(workerData) {
@@ -34,7 +35,7 @@ class EvaluationService {
         const index = nextIndex++;
         console.log(`[Worker Thread ID: ${threadId}] Started evaluating chunk of ${chunks[index].length} orders...`);
         const start = Date.now();
-        
+
         const chunkResult = await this.runWorker({
           orders: chunks[index],
           rules: plainRules,
@@ -52,20 +53,28 @@ class EvaluationService {
   }
 
   async evaluate({ orders, sessionId, ruleIds, fileName, userId }) {
-    console.log("=== RUNNING MEMORY-OPTIMIZED EVALUATION SERVICE v2 ===");
+    console.log("=== RUNNING EVALUATION SERVICE v3 (file-on-disk) ===");
 
-    // If a sessionId is provided, fetch rows from server-side TempUpload.
-    // This avoids re-sending massive JSON payloads from the browser.
+    // Session-based path: file lives on disk, parse it fully here at evaluate time.
+    // Upload only stored a lightweight file path reference — no 50k rows in transit.
     if (sessionId) {
       const tempUpload = await TempUpload.findById(sessionId).lean();
       if (!tempUpload) {
         throw ApiError.badRequest('Upload session expired or not found. Please re-upload your file.');
       }
-      orders = tempUpload.rows;
+
+      const filePath = tempUpload.filePath;
       fileName = fileName || tempUpload.fileName;
-      // Clean up temp storage immediately after retrieval
+
+      console.log(`[EvaluationService] Parsing full file from disk: ${filePath}`);
+      const parsed = parseExcelFile(filePath);
+      orders = parsed.rows;
+
+      // Cleanup: delete TempUpload record and the file from disk
       await TempUpload.findByIdAndDelete(sessionId);
-      console.log(`[EvaluationService] Fetched ${orders.length} rows from session ${sessionId}`);
+      cleanupFile(filePath);
+
+      console.log(`[EvaluationService] Parsed ${orders.length} rows from file`);
     }
 
     if (!orders || !Array.isArray(orders) || orders.length === 0) {
