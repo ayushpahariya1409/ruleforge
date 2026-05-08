@@ -8,6 +8,7 @@ const { evaluateSchema } = require('../validators/uploadValidator');
 router.use(authenticate);
 
 router.post('/', validate(evaluateSchema), evaluationController.evaluate);
+router.get('/:id/status', evaluationController.getEvaluationStatus);
 router.get('/:id/results', evaluationController.getEvaluationResults);
 
 module.exports = router;

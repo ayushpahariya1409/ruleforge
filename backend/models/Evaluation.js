@@ -24,6 +24,14 @@ const evaluationSchema = new mongoose.Schema(
       type: Number,
       required: true,
     },
+    status: {
+      type: String,
+      enum: ['pending', 'processing', 'completed', 'failed'],
+      default: 'pending',
+    },
+    error: {
+      type: String,
+    },
   },
   {
     timestamps: true,

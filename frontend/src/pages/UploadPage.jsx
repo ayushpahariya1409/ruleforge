@@ -91,23 +91,51 @@ const UploadPage = () => {
     }
 
     setEvaluating(true);
-    const toastId = toast.loading('Evaluating data against rules…');
+    const toastId = toast.loading('Initiating evaluation job…');
 
     try {
-      // Use sessionId (new backend) if available; fall back to allRows (old backend)
-      const response = await evaluationApi.evaluate(
+      // 1. Start the asynchronous job
+      const triggerResponse = await evaluationApi.evaluate(
         sessionId
           ? { sessionId, fileName, ruleIds: null }
           : { orders: allRows, fileName, ruleIds: null }
       );
 
-      toast.success(`Evaluation complete! ${response.data.data.totalMatches} matches found.`, { id: toastId, duration: 5000 });
-      navigate('/results');
-      dispatch(clearUploadPreview());
+      const evalId = triggerResponse.data.data.evaluationId;
+      toast.loading('Evaluation in progress... processing background task.', { id: toastId });
+
+      // 2. Poll for status every 2 seconds
+      let pollCount = 0;
+      const pollInterval = setInterval(async () => {
+        try {
+          pollCount++;
+          const statusRes = await evaluationApi.getStatus(evalId);
+          const { status, totalMatches, error: backendError } = statusRes.data.data;
+
+          if (status === 'completed') {
+            clearInterval(pollInterval);
+            toast.success(`Evaluation complete! ${totalMatches} matches found.`, { id: toastId, duration: 5000 });
+            navigate('/results');
+            dispatch(clearUploadPreview());
+            setEvaluating(false);
+          } else if (status === 'failed') {
+            clearInterval(pollInterval);
+            toast.error(`Evaluation failed: ${backendError || 'Unknown error'}`, { id: toastId });
+            setEvaluating(false);
+          } else if (pollCount > 150) { // 5-minute timeout
+            clearInterval(pollInterval);
+            toast.error('Evaluation taking too long. Please check the results dashboard later.', { id: toastId });
+            setEvaluating(false);
+          }
+        } catch (pollErr) {
+          console.error('Polling error:', pollErr);
+          // Don't clear interval on a single network error, keep trying
+        }
+      }, 2000);
+
     } catch (err) {
       const errMsg = err.response?.data?.error;
-      toast.error(typeof errMsg === 'string' ? errMsg : 'Evaluation failed. Please try again.', { id: toastId });
-    } finally {
+      toast.error(typeof errMsg === 'string' ? errMsg : 'Failed to start evaluation. Please try again.', { id: toastId });
       setEvaluating(false);
     }
   };

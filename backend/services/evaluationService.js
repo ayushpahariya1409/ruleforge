@@ -29,145 +29,149 @@ class EvaluationService {
 
   async runWithWorkerPool(chunks, plainRules, onChunkResult) {
     let nextIndex = 0;
-
     const runLane = async (threadId) => {
       while (nextIndex < chunks.length) {
         const index = nextIndex++;
-        console.log(`[Worker Thread ID: ${threadId}] Started evaluating chunk of ${chunks[index].length} orders...`);
-        const start = Date.now();
-
         const chunkResult = await this.runWorker({
           orders: chunks[index],
           rules: plainRules,
         });
-
-        console.log(`[Worker Thread ID: ${threadId}] Finished in ${Date.now() - start}ms`);
-
         if (onChunkResult) {
           await onChunkResult(chunkResult, index);
         }
       }
     };
-
     await Promise.all(Array.from({ length: MAX_WORKERS }, (_, i) => runLane(i + 1)));
   }
 
+  /**
+   * Main Trigger: Creates evaluation record and starts background task.
+   * Returns immediately to the client to prevent timeouts.
+   */
   async evaluate({ orders, sessionId, ruleIds, fileName, userId }) {
-    console.log("=== RUNNING EVALUATION SERVICE v3 (file-on-disk) ===");
+    console.log("=== TRIGGERING ASYNC EVALUATION v4 ===");
 
-    // Session-based path: file lives on disk, parse it fully here at evaluate time.
-    // Upload only stored a lightweight file path reference — no 50k rows in transit.
+    // 1. Initial metadata setup
+    let totalOrdersGuess = orders?.length || 0;
+    let filePath = null;
+
     if (sessionId) {
       const tempUpload = await TempUpload.findById(sessionId).lean();
-      if (!tempUpload) {
-        throw ApiError.badRequest('Upload session expired or not found. Please re-upload your file.');
-      }
-
-      const filePath = tempUpload.filePath;
+      if (!tempUpload) throw ApiError.badRequest('Upload session expired.');
+      filePath = tempUpload.filePath;
       fileName = fileName || tempUpload.fileName;
-
-      console.log(`[EvaluationService] Parsing full file from disk: ${filePath}`);
-      const parsed = parseExcelFile(filePath);
-      orders = parsed.rows;
-
-      // Cleanup: delete TempUpload record and the file from disk
-      await TempUpload.findByIdAndDelete(sessionId);
-      cleanupFile(filePath);
-
-      console.log(`[EvaluationService] Parsed ${orders.length} rows from file`);
+      totalOrdersGuess = tempUpload.totalRows;
     }
 
-    if (!orders || !Array.isArray(orders) || orders.length === 0) {
-      throw ApiError.badRequest('No orders provided for evaluation');
-    }
-
-    let rules;
-    if (ruleIds && ruleIds.length > 0) {
-      rules = await ruleRepository.findByIds(ruleIds);
-      if (rules.length === 0) {
-        throw ApiError.badRequest('No valid active rules found for the given IDs');
-      }
-    } else {
-      rules = await ruleRepository.findActive();
-      if (rules.length === 0) {
-        throw ApiError.badRequest('No active rules available. Create rules first.');
-      }
-    }
-
-    const plainRules = JSON.parse(JSON.stringify(rules));
-
-    const chunks = [];
-    for (let i = 0; i < orders.length; i += CHUNK_SIZE) {
-      chunks.push(orders.slice(i, i + CHUNK_SIZE));
-    }
-
-    // 1. Save metadata first so evaluationId is available
+    // 2. Create the Evaluation record in 'processing' status
     const evaluation = await evaluationRepository.create({
       fileName: fileName || 'Untitled',
-      totalOrders: orders.length,
-      totalMatches: 0, // Will update once workers finish
-      rulesApplied: rules.map((r) => r._id),
+      totalOrders: totalOrdersGuess,
+      totalMatches: 0,
+      rulesApplied: [],
       uploadedBy: userId,
+      status: 'processing',
     });
 
-    console.log(`[EvaluationService] Processing ${orders.length} orders in ${chunks.length} chunks with ${MAX_WORKERS} workers`);
-    const start = Date.now();
-    let totalMatches = 0;
-
-    // 2. Run workers with immediate flushing to DB
-    await this.runWithWorkerPool(chunks, plainRules, async (chunkResult, chunkIndex) => {
-      totalMatches += chunkResult.totalMatches;
-      
-      const resultsToInsert = chunkResult.results.map((r, idx) => ({
-        evaluationId: evaluation._id,
-        orderIndex: (chunkIndex * CHUNK_SIZE) + idx + 1,
-        orderData: r.orderData,
-        matchedRules: r.matchedRules,
-      }));
-
-      // Insert this chunk using native MongoDB driver for extreme memory efficiency (bypasses Mongoose model logic)
-      await EvaluationResult.collection.insertMany(resultsToInsert, { ordered: false });
-      console.log(`[EvaluationService] Chunk ${chunkIndex + 1}/${chunks.length} saved (Memory Clean).`);
-    });
-
-    console.log(`[EvaluationService] Total processing completed in ${Date.now() - start}ms`);
-
-    // 3. Update totalMatches in metadata
-    await evaluationRepository.update(evaluation._id, { totalMatches });
+    // 3. FIRE AND FORGET: Start background processing
+    // This allows the API to return 200 OK immediately.
+    this.processInBackgroundTask(evaluation._id, { orders, sessionId, filePath, ruleIds, userId })
+      .catch(err => console.error(`[BackgroundEvaluation] Critical Error in ${evaluation._id}:`, err));
 
     return {
       evaluationId: evaluation._id,
-      fileName: evaluation.fileName,
-      totalOrders: orders.length,
-      totalMatches,
-      rulesApplied: rules.map((r) => ({
-        _id: r._id,
-        ruleName: r.ruleName,
-      })),
-      results: [], // Return empty array; frontend will fetch paginated results
+      status: 'processing',
+      totalOrders: totalOrdersGuess,
     };
+  }
+
+  /**
+   * Background Task: Handles parsing, rule fetching, worker execution, and DB storage.
+   */
+  async processInBackgroundTask(evaluationId, { orders, sessionId, filePath, ruleIds }) {
+    const start = Date.now();
+    try {
+      console.log(`[BackgroundEvaluation] Starting ${evaluationId}...`);
+
+      // 1. Fetch rules
+      let rules;
+      if (ruleIds?.length > 0) {
+        rules = await ruleRepository.findByIds(ruleIds);
+      } else {
+        rules = await ruleRepository.findActive();
+      }
+      
+      const plainRules = JSON.parse(JSON.stringify(rules));
+      await evaluationRepository.update(evaluationId, { rulesApplied: rules.map(r => r._id) });
+
+      // 2. Parse file if needed
+      if (filePath) {
+        console.log(`[BackgroundEvaluation] Parsing ${filePath}`);
+        const parsed = parseExcelFile(filePath);
+        orders = parsed.rows;
+        await evaluationRepository.update(evaluationId, { totalOrders: orders.length });
+        
+        // Cleanup temp file
+        await TempUpload.findOneAndDelete({ filePath });
+        cleanupFile(filePath);
+      }
+
+      if (!orders || orders.length === 0) {
+        throw new Error('No orders found to evaluate');
+      }
+
+      // 3. Prepare Chunks
+      const chunks = [];
+      for (let i = 0; i < orders.length; i += CHUNK_SIZE) {
+        chunks.push(orders.slice(i, i + CHUNK_SIZE));
+      }
+
+      let totalMatches = 0;
+
+      // 4. Execute workers and flush results
+      await this.runWithWorkerPool(chunks, plainRules, async (chunkResult, chunkIndex) => {
+        totalMatches += chunkResult.totalMatches;
+        
+        const resultsToInsert = chunkResult.results.map((r, idx) => ({
+          evaluationId: evaluationId,
+          orderIndex: (chunkIndex * CHUNK_SIZE) + idx + 1,
+          orderData: r.orderData,
+          matchedRules: r.matchedRules,
+        }));
+
+        await EvaluationResult.collection.insertMany(resultsToInsert, { ordered: false });
+        console.log(`[BackgroundEvaluation] ${evaluationId} - Chunk ${chunkIndex + 1}/${chunks.length} saved.`);
+      });
+
+      // 5. Finalize
+      await evaluationRepository.update(evaluationId, { 
+        status: 'completed', 
+        totalMatches,
+        totalOrders: orders.length
+      });
+      
+      console.log(`[BackgroundEvaluation] ${evaluationId} Finished in ${Date.now() - start}ms`);
+
+    } catch (error) {
+      console.error(`[BackgroundEvaluation] Failed ${evaluationId}:`, error);
+      await evaluationRepository.update(evaluationId, { 
+        status: 'failed', 
+        error: error.message 
+      });
+    }
   }
 
   async getEvaluationResults(evaluationId, page = 1, limit = 50, query = { evaluationId }) {
     const skip = (page - 1) * limit;
-    
     const [results, total] = await Promise.all([
-      EvaluationResult.find(query)
-        .sort({ orderIndex: 1 })
-        .skip(skip)
-        .limit(limit),
+      EvaluationResult.find(query).sort({ orderIndex: 1 }).skip(skip).limit(limit),
       EvaluationResult.countDocuments(query)
     ]);
+    return { results, pagination: { total, page, limit, totalPages: Math.ceil(total / limit) } };
+  }
 
-    return {
-      results,
-      pagination: {
-        total,
-        page,
-        limit,
-        totalPages: Math.ceil(total / limit)
-      }
-    };
+  async getEvaluationStatus(id) {
+    return evaluationRepository.findById(id);
   }
 }
 
