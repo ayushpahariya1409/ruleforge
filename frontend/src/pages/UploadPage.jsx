@@ -74,7 +74,7 @@ const UploadPage = () => {
   };
 
   const handleEvaluate = async () => {
-    if (!previewData || !previewData.allRows) {
+    if (!sessionId) {
       toast.error('No data available for evaluation. Please upload a file first.');
       return;
     }
