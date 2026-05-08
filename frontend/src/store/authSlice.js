@@ -71,12 +71,20 @@ export const fetchCurrentUser = createAsyncThunk(
   'auth/fetchCurrentUser',
   async (_, { rejectWithValue }) => {
     try {
-      // Use native fetch to avoid axios logging 401s to console
+      // Use native fetch to avoid axios logging 401s to console.
+      // AbortController gives an 8s timeout — if the backend is down/restarting,
+      // the app still loads (showing the login page) instead of hanging forever.
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+
       const baseUrl = import.meta.env.VITE_API_URL || '/api';
       const res = await fetch(`${baseUrl}/auth/me`, {
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
+
       if (!res.ok) return rejectWithValue('Not authenticated');
       const data = await res.json();
       return data.data.user;
