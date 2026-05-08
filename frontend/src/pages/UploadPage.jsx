@@ -56,18 +56,23 @@ const UploadPage = () => {
       formData.append('file', selectedFile);
 
       const response = await uploadApi.upload(formData);
+      const responseData = response.data.data;
+      // Destructure allRows OUT of previewData before storing in Redux.
+      // Storing 50k rows inside previewData causes Redux to hold 2x data in state,
+      // triggering massive re-renders that freeze and crash the UI.
+      const { allRows: rowsForEval, ...lightPreviewData } = responseData;
       dispatch(setUploadPreview({ 
-        previewData: response.data.data, 
+        previewData: lightPreviewData,   // Only preview (10 rows) + headers + metadata
         fileName: selectedFile.name,
         fileSize: selectedFile.size,
         fileType: selectedFile.name.substring(selectedFile.name.lastIndexOf('.')).toLowerCase(),
-        sessionId: response.data.data.sessionId ?? null,
-        allRows: response.data.data.allRows ?? null, // fallback if backend is on old version
+        sessionId: responseData.sessionId ?? null,
+        allRows: rowsForEval ?? null,   // Stored separately, not inside previewData
       }));
       toast.success('File parsed successfully! Review data below.');
     } catch (err) {
-      const msg = err.response?.data?.error || 'Failed to upload or parse the file. Please check the format and try again.';
-      toast.error(msg);
+      const msg = err.response?.data?.error;
+      toast.error(typeof msg === 'string' ? msg : 'Failed to upload or parse the file. Please check the format and try again.');
       dispatch(clearUploadPreview());
     } finally {
       setUploading(false);
@@ -100,7 +105,8 @@ const UploadPage = () => {
       navigate('/results');
       dispatch(clearUploadPreview());
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Evaluation failed. Please try again.', { id: toastId });
+      const errMsg = err.response?.data?.error;
+      toast.error(typeof errMsg === 'string' ? errMsg : 'Evaluation failed. Please try again.', { id: toastId });
     } finally {
       setEvaluating(false);
     }
