@@ -5,7 +5,8 @@ const initialState = {
   fileName: null,
   fileSize: null,
   fileType: null,
-  sessionId: null, // server-side session ID — rows stored in TempUpload on backend
+  sessionId: null, // new backend: rows stored server-side in TempUpload
+  allRows: null,   // old backend fallback: rows stored in Redux
 };
 
 const uploadSlice = createSlice({
@@ -18,11 +19,13 @@ const uploadSlice = createSlice({
       state.fileSize = action.payload.fileSize;
       state.fileType = action.payload.fileType;
       state.sessionId = action.payload.sessionId ?? null;
+      state.allRows = action.payload.allRows ?? null;
     },
     clearUploadPreview: (state) => {
       state.previewData = null;
       state.fileName = null;
       state.sessionId = null;
+      state.allRows = null;
     },
   },
 });

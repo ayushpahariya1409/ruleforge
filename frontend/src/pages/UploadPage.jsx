@@ -19,7 +19,7 @@ import Reveal from '../components/shared/Reveal';
 
 
 const UploadPage = () => {
-  const { previewData, fileName, fileSize, sessionId } = useSelector((state) => state.upload);
+  const { previewData, fileName, fileSize, sessionId, allRows } = useSelector((state) => state.upload);
   const dispatch = useDispatch();
 
   const [uploading, setUploading] = useState(false);
@@ -62,6 +62,7 @@ const UploadPage = () => {
         fileSize: selectedFile.size,
         fileType: selectedFile.name.substring(selectedFile.name.lastIndexOf('.')).toLowerCase(),
         sessionId: response.data.data.sessionId ?? null,
+        allRows: response.data.data.allRows ?? null, // fallback if backend is on old version
       }));
       toast.success('File parsed successfully! Review data below.');
     } catch (err) {
@@ -74,7 +75,7 @@ const UploadPage = () => {
   };
 
   const handleEvaluate = async () => {
-    if (!sessionId) {
+    if (!sessionId && !allRows) {
       toast.error('No data available for evaluation. Please upload a file first.');
       return;
     }
@@ -88,11 +89,12 @@ const UploadPage = () => {
     const toastId = toast.loading('Evaluating data against rules…');
 
     try {
-      const response = await evaluationApi.evaluate({
-        sessionId,          // server already has the rows — no large payload
-        fileName: fileName,
-        ruleIds: null,
-      });
+      // Use sessionId (new backend) if available; fall back to allRows (old backend)
+      const response = await evaluationApi.evaluate(
+        sessionId
+          ? { sessionId, fileName, ruleIds: null }
+          : { orders: allRows, fileName, ruleIds: null }
+      );
 
       toast.success(`Evaluation complete! ${response.data.data.totalMatches} matches found.`, { id: toastId, duration: 5000 });
       navigate('/results');
