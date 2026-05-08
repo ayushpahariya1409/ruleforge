@@ -7,11 +7,11 @@ exports.uploadFile = asyncHandler(async (req, res) => {
     success: true,
     message: 'File uploaded and parsed successfully',
     data: {
+      sessionId: result.sessionId,   // session reference — frontend uses this for evaluate
       fileName: result.fileName,
       headers: result.headers,
       totalRows: result.totalRows,
       preview: result.preview,
-      allRows: result.allRows,
     },
   });
 });
