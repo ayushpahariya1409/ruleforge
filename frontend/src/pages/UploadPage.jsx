@@ -19,7 +19,7 @@ import Reveal from '../components/shared/Reveal';
 
 
 const UploadPage = () => {
-  const { previewData, fileName, fileSize } = useSelector((state) => state.upload);
+  const { previewData, fileName, fileSize, sessionId } = useSelector((state) => state.upload);
   const dispatch = useDispatch();
 
   const [uploading, setUploading] = useState(false);
@@ -60,7 +60,8 @@ const UploadPage = () => {
         previewData: response.data.data, 
         fileName: selectedFile.name,
         fileSize: selectedFile.size,
-        fileType: selectedFile.name.substring(selectedFile.name.lastIndexOf('.')).toLowerCase()
+        fileType: selectedFile.name.substring(selectedFile.name.lastIndexOf('.')).toLowerCase(),
+        sessionId: response.data.data.sessionId ?? null,
       }));
       toast.success('File parsed successfully! Review data below.');
     } catch (err) {
@@ -88,7 +89,7 @@ const UploadPage = () => {
 
     try {
       const response = await evaluationApi.evaluate({
-        orders: previewData.allRows,
+        sessionId,          // server already has the rows — no large payload
         fileName: fileName,
         ruleIds: null,
       });

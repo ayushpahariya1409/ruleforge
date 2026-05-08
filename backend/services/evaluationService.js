@@ -1,6 +1,7 @@
 const ruleRepository = require('../repositories/ruleRepository');
 const evaluationRepository = require('../repositories/evaluationRepository');
-const EvaluationResult = require('../models/EvaluationResult'); // New Model
+const EvaluationResult = require('../models/EvaluationResult');
+const TempUpload = require('../models/TempUpload');
 const { Worker } = require('worker_threads');
 const path = require('path');
 const ApiError = require('../utils/ApiError');
@@ -50,8 +51,23 @@ class EvaluationService {
     await Promise.all(Array.from({ length: MAX_WORKERS }, (_, i) => runLane(i + 1)));
   }
 
-  async evaluate({ orders, ruleIds, fileName, userId }) {
+  async evaluate({ orders, sessionId, ruleIds, fileName, userId }) {
     console.log("=== RUNNING MEMORY-OPTIMIZED EVALUATION SERVICE v2 ===");
+
+    // If a sessionId is provided, fetch rows from server-side TempUpload.
+    // This avoids re-sending massive JSON payloads from the browser.
+    if (sessionId) {
+      const tempUpload = await TempUpload.findById(sessionId).lean();
+      if (!tempUpload) {
+        throw ApiError.badRequest('Upload session expired or not found. Please re-upload your file.');
+      }
+      orders = tempUpload.rows;
+      fileName = fileName || tempUpload.fileName;
+      // Clean up temp storage immediately after retrieval
+      await TempUpload.findByIdAndDelete(sessionId);
+      console.log(`[EvaluationService] Fetched ${orders.length} rows from session ${sessionId}`);
+    }
+
     if (!orders || !Array.isArray(orders) || orders.length === 0) {
       throw ApiError.badRequest('No orders provided for evaluation');
     }

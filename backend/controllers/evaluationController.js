@@ -3,10 +3,11 @@ const evaluationService = require('../services/evaluationService');
 const mongoose = require('mongoose');
 
 exports.evaluate = asyncHandler(async (req, res) => {
-  const { orders, ruleIds, fileName } = req.body;
+  const { orders, sessionId, ruleIds, fileName } = req.body;
 
   const result = await evaluationService.evaluate({
     orders,
+    sessionId,
     ruleIds,
     fileName,
     userId: req.user.id,

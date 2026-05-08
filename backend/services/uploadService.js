@@ -1,5 +1,6 @@
 const { parseExcelFile, cleanupFile } = require('../utils/excelParser');
 const ApiError = require('../utils/ApiError');
+const TempUpload = require('../models/TempUpload');
 
 class UploadService {
   async processUpload(file) {
@@ -26,12 +27,22 @@ class UploadService {
       const parsed = parseExcelFile(file.path);
       cleanupFile(file.path);
 
+      // Save rows server-side so the browser doesn't need to re-send them on evaluate.
+      // This is critical for large files (50k+ rows) — avoids a ~15MB JSON request body.
+      const tempUpload = await TempUpload.create({
+        rows: parsed.rows,
+        headers: parsed.headers,
+        totalRows: parsed.totalRows,
+        fileName: file.originalname,
+      });
+
       return {
+        sessionId: tempUpload._id.toString(), // lightweight reference
         fileName: file.originalname,
         headers: parsed.headers,
         totalRows: parsed.totalRows,
-        preview: parsed.rows.slice(0, 10), // First 10 rows for preview
-        allRows: parsed.rows,
+        preview: parsed.rows.slice(0, 10), // First 10 rows for UI preview only
+        // NOTE: allRows is intentionally NOT returned to the browser
       };
     } catch (error) {
       cleanupFile(file.path);
@@ -53,3 +64,4 @@ class UploadService {
 }
 
 module.exports = new UploadService();
+

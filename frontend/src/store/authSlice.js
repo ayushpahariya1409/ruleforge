@@ -16,8 +16,9 @@ export const loginUser = createAsyncThunk(
       const { data } = await authApi.login(credentials);
       return data.data; // Now only contains { user }
     } catch (err) {
+      const errorMessage = err.response?.data?.error || err.response?.data?.message || err.message || 'Login failed';
       return rejectWithValue(
-        err.response?.data?.error || 'Login failed'
+        typeof errorMessage === 'object' ? JSON.stringify(errorMessage) : errorMessage
       );
     }
   }
@@ -30,8 +31,9 @@ export const googleLoginUser = createAsyncThunk(
       const { data } = await authApi.googleLogin(idToken);
       return data.data;
     } catch (err) {
+      const errorMessage = err.response?.data?.error || err.response?.data?.message || err.message || 'Google login failed';
       return rejectWithValue(
-        err.response?.data?.error || 'Google login failed'
+        typeof errorMessage === 'object' ? JSON.stringify(errorMessage) : errorMessage
       );
     }
   }

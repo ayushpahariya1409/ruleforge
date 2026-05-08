@@ -4,6 +4,7 @@ import { API_BASE_URL } from '../utils/constants';
 const axiosInstance = axios.create({
   baseURL: API_BASE_URL,
   withCredentials: true,
+  timeout: 300000, // 5 minutes — needed for large evaluations (50k+ rows)
   headers: {
     'Content-Type': 'application/json',
   },
