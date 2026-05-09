@@ -5,6 +5,7 @@ const TempUpload = require('../models/TempUpload');
 const { parseExcelFile, cleanupFile } = require('../utils/excelParser');
 const { Worker } = require('worker_threads');
 const path = require('path');
+const fs = require('fs');
 const ApiError = require('../utils/ApiError');
 
 // t3.micro = 2 vCPUs, so 2 workers is optimal
@@ -114,21 +115,20 @@ class EvaluationService {
       if (filePath) {
         const tempDoc = await TempUpload.findOne({ filePath }).lean();
 
-        if (tempDoc?.parseStatus === 'ready' && tempDoc?.parsedRows?.length > 0) {
-          // ✅ FAST PATH: Background parse already completed — use cached rows instantly
-          orders = tempDoc.parsedRows;
-          console.log(`[Eval] ${evaluationId} - Used cached parse (${orders.length} rows) in ${Date.now() - parseStart}ms`);
+        if (tempDoc?.parseStatus === 'ready' && tempDoc?.parsedFilePath && fs.existsSync(tempDoc.parsedFilePath)) {
+          // ✅ FAST PATH: Read pre-parsed JSON from disk (near-instant)
+          orders = JSON.parse(fs.readFileSync(tempDoc.parsedFilePath, 'utf8'));
+          fs.unlinkSync(tempDoc.parsedFilePath); // cleanup JSON cache
+          console.log(`[Eval] ${evaluationId} - ✅ Used JSON cache (${orders.length} rows) in ${Date.now() - parseStart}ms`);
         } else {
-          // ⏳ FALLBACK: Background parse not ready yet — parse now
-          console.log(`[Eval] ${evaluationId} - Cache not ready (status: ${tempDoc?.parseStatus}), parsing from disk...`);
+          // ⏳ FALLBACK: Background parse not ready yet, parse from disk
+          console.log(`[Eval] ${evaluationId} - ⏳ Cache miss (status: ${tempDoc?.parseStatus}), parsing XLSX...`);
           const parsed = parseExcelFile(filePath);
           orders = parsed.rows;
-          console.log(`[Eval] ${evaluationId} - Disk parse done: ${orders.length} rows in ${Date.now() - parseStart}ms`);
+          console.log(`[Eval] ${evaluationId} - Disk parse: ${orders.length} rows in ${Date.now() - parseStart}ms`);
         }
 
         await evaluationRepository.update(evaluationId, { totalOrders: orders.length });
-
-        // Cleanup temp file and DB record
         await TempUpload.findOneAndDelete({ filePath });
         cleanupFile(filePath);
       }

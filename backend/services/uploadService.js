@@ -1,6 +1,7 @@
 const { parseExcelPreview, parseExcelFile, cleanupFile } = require('../utils/excelParser');
 const ApiError = require('../utils/ApiError');
 const TempUpload = require('../models/TempUpload');
+const fs = require('fs');
 
 class UploadService {
   async processUpload(file) {
@@ -55,22 +56,27 @@ class UploadService {
   }
 
   /**
-   * Parses the full Excel file in the background and caches rows in MongoDB.
-   * Runs after the upload response is already sent to the client.
+   * Parses the full Excel file in the background and writes rows to a JSON file on disk.
+   * Disk JSON is 10x faster to read than re-parsing XLSX, and avoids MongoDB's 16MB limit.
    */
   async _parseFullFileInBackground(sessionId, filePath) {
     try {
       console.log(`[Upload] Background parse started for session ${sessionId}`);
       const start = Date.now();
       const parsed = parseExcelFile(filePath);
+
+      // Write parsed rows as a JSON file next to the original file
+      const parsedFilePath = filePath.replace(/\.[^.]+$/, '_parsed.json');
+      fs.writeFileSync(parsedFilePath, JSON.stringify(parsed.rows));
+
       await TempUpload.findByIdAndUpdate(sessionId, {
-        parsedRows: parsed.rows,
+        parsedFilePath,
         totalRows: parsed.totalRows,
         parseStatus: 'ready',
       });
-      console.log(`[Upload] Background parse done for ${sessionId}: ${parsed.totalRows} rows in ${Date.now() - start}ms`);
+      console.log(`[Upload] ✅ Background parse done for ${sessionId}: ${parsed.totalRows} rows in ${Date.now() - start}ms`);
     } catch (err) {
-      console.error(`[Upload] Background parse FAILED for ${sessionId}:`, err.message);
+      console.error(`[Upload] ❌ Background parse FAILED for ${sessionId}:`, err.message);
       await TempUpload.findByIdAndUpdate(sessionId, { parseStatus: 'failed' });
     }
   }

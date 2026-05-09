@@ -12,10 +12,10 @@ const TempUploadSchema = new mongoose.Schema({
   },
   fileName: String,
   totalRows: Number,
-  // Cached full parse result — populated in background after upload.
-  // When present, evaluate skips the 20s re-parse step.
-  parsedRows: {
-    type: mongoose.Schema.Types.Mixed,
+  // Path to the pre-parsed JSON file on disk (populated in background after upload).
+  // When present, evaluate reads JSON instead of re-parsing slow XLSX.
+  parsedFilePath: {
+    type: String,
     default: null,
   },
   parseStatus: {
