@@ -53,8 +53,9 @@ const FileDropzone = ({ onFileSelect, currentFile = null }) => {
         onFileSelect(file);
       } else {
         toast.error('Please select an Excel (.xlsx, .xls) or CSV (.csv) file');
-        e.target.value = ''; // Clear the input
       }
+      // Always clear the value so the same file can be selected again
+      e.target.value = '';
     }
   };
 
