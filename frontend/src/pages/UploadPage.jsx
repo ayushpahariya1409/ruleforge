@@ -25,8 +25,10 @@ const UploadPage = () => {
   const dispatch = useDispatch();
 
   const [uploading, setUploading] = useState(false);   // background server upload
+  const [uploadFailed, setUploadFailed] = useState(false); // server upload failed
   const [evaluating, setEvaluating] = useState(false);
   const [downloadingTemplate, setDownloadingTemplate] = useState(false);
+  const [pendingFile, setPendingFile] = useState(null); // keep file ref for retry
   const navigate = useNavigate();
 
   const { data: rulesData } = useRules();
@@ -70,9 +72,47 @@ const UploadPage = () => {
     });
   };
 
+  /**
+   * Upload file to server and get sessionId
+   */
+  const uploadToServer = async (file, ext) => {
+    setUploading(true);
+    setUploadFailed(false);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const response = await uploadApi.upload(formData);
+      const responseData = response.data.data;
+
+      // Update Redux with the real sessionId from server
+      dispatch(setUploadPreview({
+        previewData: {
+          headers: responseData.headers,
+          preview: responseData.preview,
+          totalRows: responseData.totalRows,
+        },
+        fileName: file.name,
+        fileSize: file.size,
+        fileType: ext,
+        sessionId: responseData.sessionId ?? null,
+        allRows: null,
+      }));
+      setPendingFile(null); // upload succeeded, no need to keep file ref
+    } catch (err) {
+      const msg = err.response?.data?.error;
+      toast.error(typeof msg === 'string' ? msg : 'Server upload failed. Click "Retry Upload" to try again.');
+      setUploadFailed(true);
+      setPendingFile(file); // keep file for retry
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const handleFileSelect = async (selectedFile) => {
     if (!selectedFile) {
       dispatch(clearUploadPreview());
+      setUploadFailed(false);
+      setPendingFile(null);
       return;
     }
 
@@ -83,11 +123,10 @@ const UploadPage = () => {
       return;
     }
 
-    // ─── STEP 1: Parse preview client-side INSTANTLY (no spinner, no server round-trip) ───
+    // ─── STEP 1: Parse preview client-side INSTANTLY ───
     try {
       const clientPreview = await parsePreviewClientSide(selectedFile);
 
-      // Show preview immediately
       dispatch(setUploadPreview({
         previewData: {
           headers: clientPreview.headers,
@@ -97,7 +136,7 @@ const UploadPage = () => {
         fileName: selectedFile.name,
         fileSize: selectedFile.size,
         fileType: ext,
-        sessionId: null,   // Not available yet — server upload in progress
+        sessionId: null,
         allRows: null,
       }));
     } catch (err) {
@@ -106,33 +145,14 @@ const UploadPage = () => {
       return;
     }
 
-    // ─── STEP 2: Upload file to server in background ───────────────────────────
-    setUploading(true);
-    try {
-      const formData = new FormData();
-      formData.append('file', selectedFile);
-      const response = await uploadApi.upload(formData);
-      const responseData = response.data.data;
+    // ─── STEP 2: Upload to server in background ───
+    await uploadToServer(selectedFile, ext);
+  };
 
-      // Update Redux with the real sessionId from server (enables Evaluate button fully)
-      dispatch(setUploadPreview({
-        previewData: {
-          headers: responseData.headers,
-          preview: responseData.preview,
-          totalRows: responseData.totalRows,
-        },
-        fileName: selectedFile.name,
-        fileSize: selectedFile.size,
-        fileType: ext,
-        sessionId: responseData.sessionId ?? null,
-        allRows: null,
-      }));
-    } catch (err) {
-      const msg = err.response?.data?.error;
-      toast.error(typeof msg === 'string' ? msg : 'Server upload failed. Please try again.');
-      // Keep the client-side preview visible, just clear sessionId
-    } finally {
-      setUploading(false);
+  const handleRetryUpload = () => {
+    if (pendingFile) {
+      const ext = pendingFile.name.substring(pendingFile.name.lastIndexOf('.')).toLowerCase();
+      uploadToServer(pendingFile, ext);
     }
   };
 
@@ -358,7 +378,7 @@ const UploadPage = () => {
                   File parsed successfully. Unrecognized columns will simply have no matching rules.
                 </div>
                 <div className="flex items-center gap-3">
-                  <Button variant="secondary" onClick={() => dispatch(clearUploadPreview())}>
+                  <Button variant="secondary" onClick={() => { dispatch(clearUploadPreview()); setUploadFailed(false); setPendingFile(null); }}>
                     Choose Different File
                   </Button>
                   {uploading && !sessionId ? (
@@ -366,6 +386,14 @@ const UploadPage = () => {
                       <Spinner size="sm" />
                       <span>Uploading to server…</span>
                     </div>
+                  ) : uploadFailed && !sessionId ? (
+                    <Button
+                      variant="primary"
+                      onClick={handleRetryUpload}
+                      className="shadow-red-600/30 shadow-xl px-10 !bg-red-600 hover:!bg-red-700"
+                    >
+                      ⚠️ Upload Failed — Retry
+                    </Button>
                   ) : (
                     <Button
                       variant="primary"
