@@ -1,11 +1,14 @@
-const { parentPort, workerData, threadId } = require('worker_threads');
-const { evaluateAllOrders } = require('./ruleEngine');
+const { parentPort, workerData } = require('worker_threads');
+const { evaluateAllOrdersFast } = require('./ruleEngine');
 
 if (workerData && workerData.orders && workerData.rules) {
   try {
-    const start = Date.now();
-    const { results, totalMatches } = evaluateAllOrders(workerData.orders, workerData.rules);
-    parentPort.postMessage({ results, totalMatches });
+    const { matchedResults, totalMatches, totalProcessed } = evaluateAllOrdersFast(
+      workerData.orders,
+      workerData.rules
+    );
+    // Only send matched results back — not all 50k orders
+    parentPort.postMessage({ matchedResults, totalMatches, totalProcessed });
   } catch (error) {
     parentPort.postMessage({ error: error.message });
   }

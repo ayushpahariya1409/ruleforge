@@ -7,8 +7,12 @@ const { Worker } = require('worker_threads');
 const path = require('path');
 const ApiError = require('../utils/ApiError');
 
-const MAX_WORKERS = 4;
-const CHUNK_SIZE = 5000;
+// t3.micro = 2 vCPUs, so 2 workers is optimal
+const MAX_WORKERS = 2;
+// Larger chunks = fewer worker spawns = less serialization overhead
+const CHUNK_SIZE = 10000;
+// MongoDB batch size for inserts
+const DB_BATCH_SIZE = 5000;
 
 class EvaluationService {
   runWorker(workerData) {
@@ -27,9 +31,9 @@ class EvaluationService {
     });
   }
 
-  async runWithWorkerPool(chunks, plainRules, onChunkResult) {
+  async runWithWorkerPool(chunks, plainRules, baseIndices, onChunkResult) {
     let nextIndex = 0;
-    const runLane = async (threadId) => {
+    const runLane = async () => {
       while (nextIndex < chunks.length) {
         const index = nextIndex++;
         const chunkResult = await this.runWorker({
@@ -37,11 +41,11 @@ class EvaluationService {
           rules: plainRules,
         });
         if (onChunkResult) {
-          await onChunkResult(chunkResult, index);
+          await onChunkResult(chunkResult, index, baseIndices[index]);
         }
       }
     };
-    await Promise.all(Array.from({ length: MAX_WORKERS }, (_, i) => runLane(i + 1)));
+    await Promise.all(Array.from({ length: MAX_WORKERS }, () => runLane()));
   }
 
   /**
@@ -49,7 +53,7 @@ class EvaluationService {
    * Returns immediately to the client to prevent timeouts.
    */
   async evaluate({ orders, sessionId, ruleIds, fileName, userId }) {
-    console.log("=== TRIGGERING ASYNC EVALUATION v4 ===");
+    console.log("=== TRIGGERING ASYNC EVALUATION v5 (OPTIMIZED) ===");
 
     // 1. Initial metadata setup
     let totalOrdersGuess = orders?.length || 0;
@@ -74,9 +78,8 @@ class EvaluationService {
     });
 
     // 3. FIRE AND FORGET: Start background processing
-    // This allows the API to return 200 OK immediately.
     this.processInBackgroundTask(evaluation._id, { orders, sessionId, filePath, ruleIds, userId })
-      .catch(err => console.error(`[BackgroundEvaluation] Critical Error in ${evaluation._id}:`, err));
+      .catch(err => console.error(`[Eval] CRITICAL ${evaluation._id}:`, err));
 
     return {
       evaluationId: evaluation._id,
@@ -87,11 +90,12 @@ class EvaluationService {
 
   /**
    * Background Task: Handles parsing, rule fetching, worker execution, and DB storage.
+   * OPTIMIZED: Only stores matched results, uses fast evaluation path.
    */
   async processInBackgroundTask(evaluationId, { orders, sessionId, filePath, ruleIds }) {
     const start = Date.now();
     try {
-      console.log(`[BackgroundEvaluation] Starting ${evaluationId}...`);
+      console.log(`[Eval] Starting ${evaluationId}...`);
 
       // 1. Fetch rules
       let rules;
@@ -103,15 +107,18 @@ class EvaluationService {
       
       const plainRules = JSON.parse(JSON.stringify(rules));
       await evaluationRepository.update(evaluationId, { rulesApplied: rules.map(r => r._id) });
+      console.log(`[Eval] ${evaluationId} - ${plainRules.length} rules loaded in ${Date.now() - start}ms`);
 
       // 2. Parse file if needed
+      const parseStart = Date.now();
       if (filePath) {
-        console.log(`[BackgroundEvaluation] Parsing ${filePath}`);
         const parsed = parseExcelFile(filePath);
         orders = parsed.rows;
+        console.log(`[Eval] ${evaluationId} - Parsed ${orders.length} rows in ${Date.now() - parseStart}ms`);
+        
         await evaluationRepository.update(evaluationId, { totalOrders: orders.length });
         
-        // Cleanup temp file
+        // Cleanup temp file and DB record
         await TempUpload.findOneAndDelete({ filePath });
         cleanupFile(filePath);
       }
@@ -120,40 +127,59 @@ class EvaluationService {
         throw new Error('No orders found to evaluate');
       }
 
-      // 3. Prepare Chunks
+      // 3. Prepare Chunks with base index tracking
       const chunks = [];
+      const baseIndices = [];
       for (let i = 0; i < orders.length; i += CHUNK_SIZE) {
         chunks.push(orders.slice(i, i + CHUNK_SIZE));
+        baseIndices.push(i);
       }
+      console.log(`[Eval] ${evaluationId} - Split into ${chunks.length} chunks of ${CHUNK_SIZE}`);
+
+      // Free memory — we don't need the full array anymore
+      orders = null;
 
       let totalMatches = 0;
+      const evalStart = Date.now();
 
-      // 4. Execute workers and flush results
-      await this.runWithWorkerPool(chunks, plainRules, async (chunkResult, chunkIndex) => {
+      // 4. Execute workers — ONLY matched results come back
+      await this.runWithWorkerPool(chunks, plainRules, baseIndices, async (chunkResult, chunkIndex, baseIndex) => {
         totalMatches += chunkResult.totalMatches;
-        
-        const resultsToInsert = chunkResult.results.map((r, idx) => ({
-          evaluationId: evaluationId,
-          orderIndex: (chunkIndex * CHUNK_SIZE) + idx + 1,
-          orderData: r.orderData,
-          matchedRules: r.matchedRules,
-        }));
 
-        await EvaluationResult.collection.insertMany(resultsToInsert, { ordered: false });
-        console.log(`[BackgroundEvaluation] ${evaluationId} - Chunk ${chunkIndex + 1}/${chunks.length} saved.`);
+        // Only insert results that actually matched a rule
+        if (chunkResult.matchedResults.length > 0) {
+          const resultsToInsert = chunkResult.matchedResults.map(r => ({
+            evaluationId: evaluationId,
+            orderIndex: baseIndex + r.orderIndex,
+            orderData: r.orderData,
+            matchedRules: r.matchedRuleIds.map(mr => ({
+              ruleId: mr.ruleId,
+              ruleName: mr.ruleName,
+              matched: true,
+            })),
+          }));
+
+          // Batch insert in groups to avoid overwhelming MongoDB
+          for (let b = 0; b < resultsToInsert.length; b += DB_BATCH_SIZE) {
+            const batch = resultsToInsert.slice(b, b + DB_BATCH_SIZE);
+            await EvaluationResult.collection.insertMany(batch, { ordered: false });
+          }
+        }
+
+        console.log(`[Eval] ${evaluationId} - Chunk ${chunkIndex + 1}/${chunks.length}: ${chunkResult.totalMatches} matches (${chunkResult.totalProcessed} processed) in ${Date.now() - evalStart}ms`);
       });
 
       // 5. Finalize
       await evaluationRepository.update(evaluationId, { 
         status: 'completed', 
         totalMatches,
-        totalOrders: orders.length
+        totalOrders: chunks.reduce((sum, c) => sum + c.length, 0),
       });
       
-      console.log(`[BackgroundEvaluation] ${evaluationId} Finished in ${Date.now() - start}ms`);
+      console.log(`[Eval] ✅ ${evaluationId} DONE: ${totalMatches} matches in ${Date.now() - start}ms`);
 
     } catch (error) {
-      console.error(`[BackgroundEvaluation] Failed ${evaluationId}:`, error);
+      console.error(`[Eval] ❌ ${evaluationId} FAILED:`, error);
       await evaluationRepository.update(evaluationId, { 
         status: 'failed', 
         error: error.message 
@@ -164,7 +190,7 @@ class EvaluationService {
   async getEvaluationResults(evaluationId, page = 1, limit = 50, query = { evaluationId }) {
     const skip = (page - 1) * limit;
     const [results, total] = await Promise.all([
-      EvaluationResult.find(query).sort({ orderIndex: 1 }).skip(skip).limit(limit),
+      EvaluationResult.find(query).sort({ orderIndex: 1 }).skip(skip).limit(limit).lean(),
       EvaluationResult.countDocuments(query)
     ]);
     return { results, pagination: { total, page, limit, totalPages: Math.ceil(total / limit) } };
