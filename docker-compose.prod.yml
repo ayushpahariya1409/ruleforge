@@ -16,14 +16,7 @@ services:
     volumes:
       - backend_uploads:/app/uploads
 
-  frontend:
-    image: ${DOCKERHUB_USERNAME}/rule-engine-frontend:latest
-    container_name: rule-engine-frontend
-    restart: unless-stopped
-    ports:
-      - "80:80"
-    depends_on:
-      - backend
+  # Frontend is deployed on Vercel — no need to run it on EC2
 
 volumes:
   backend_uploads:
