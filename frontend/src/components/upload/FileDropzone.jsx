@@ -7,6 +7,13 @@ const FileDropzone = ({ onFileSelect, currentFile = null }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [localFile, setLocalFile] = useState(null);
 
+  // Sync local state when parent clears the file (e.g., via "Choose Different File")
+  React.useEffect(() => {
+    if (!currentFile) {
+      setLocalFile(null);
+    }
+  }, [currentFile]);
+
   const displayFile = localFile || currentFile;
 
   const handleDragOver = useCallback((e) => {
