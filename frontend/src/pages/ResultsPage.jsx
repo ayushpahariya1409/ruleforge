@@ -98,6 +98,8 @@ const ResultsPage = () => {
   const detailTotalPages = resultsData?.pagination?.totalPages || 1;
   const rangeStart = resultsTotal === 0 ? 0 : (detailPage - 1) * pageSize + 1;
   const rangeEnd = Math.min(detailPage * pageSize, resultsTotal);
+  // Use live result count as source of truth; fall back to stored value for old evaluations
+  const displayedMatches = resultsTotal > 0 ? resultsTotal : (detailData?.totalMatches || 0);
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto">
@@ -208,11 +210,11 @@ const ResultsPage = () => {
               </div>
               <div className="bg-success-50 border border-success-200 rounded-2xl p-4 text-center">
                 <p className="text-[10px] uppercase font-black text-gray-500 mb-1">Matches Found</p>
-                <p className="text-xl font-bold text-success-600">{detailData.totalMatches}</p>
+                <p className="text-xl font-bold text-success-600">{displayedMatches.toLocaleString()}</p>
               </div>
               <div className="bg-primary-50 border border-primary-200 rounded-2xl p-4 text-center">
                 <p className="text-[10px] uppercase font-black text-gray-500 mb-1">Match Rate</p>
-                <p className="text-xl font-bold text-primary-600">{getMatchRate(detailData.totalMatches, detailData.totalOrders)}</p>
+                <p className="text-xl font-bold text-primary-600">{getMatchRate(displayedMatches, detailData.totalOrders)}</p>
               </div>
             </div>
 

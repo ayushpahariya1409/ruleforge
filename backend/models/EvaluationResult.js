@@ -46,6 +46,9 @@ const resultSchema = new mongoose.Schema(
   }
 );
 
+// TTL index: automatically delete records 24 hours after creation
+resultSchema.index({ createdAt: 1 }, { expireAfterSeconds: 86400 });
+
 // Compound index for efficient paginated retrieval
 resultSchema.index({ evaluationId: 1, orderIndex: 1 });
 
