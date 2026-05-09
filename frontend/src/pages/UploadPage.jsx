@@ -101,6 +101,7 @@ const UploadPage = () => {
         allRows: null,
       }));
     } catch (err) {
+      console.error('Client-side parse error:', err);
       toast.error('Could not read file. Make sure it is a valid Excel or CSV file.');
       return;
     }
