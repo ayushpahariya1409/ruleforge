@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   HiOutlineArrowRight, HiOutlineChartBarSquare, HiPlay, HiCheckCircle,
@@ -29,9 +29,31 @@ const UploadPage = () => {
   const [evaluating, setEvaluating] = useState(false);
   const [downloadingTemplate, setDownloadingTemplate] = useState(false);
   const [pendingFile, setPendingFile] = useState(null); // keep file ref for retry
+  const uploadAbortRef = useRef(null); // AbortController for cancelling in-flight uploads
   const navigate = useNavigate();
 
   const { data: rulesData } = useRules();
+
+  /**
+   * Cancel any in-flight upload request
+   */
+  const cancelUpload = () => {
+    if (uploadAbortRef.current) {
+      uploadAbortRef.current.abort();
+      uploadAbortRef.current = null;
+    }
+  };
+
+  /**
+   * Full reset: cancel upload + clear all state
+   */
+  const handleReset = () => {
+    cancelUpload();
+    dispatch(clearUploadPreview());
+    setUploading(false);
+    setUploadFailed(false);
+    setPendingFile(null);
+  };
 
   /**
    * Parse first 10 rows from the file on the client side using SheetJS.
@@ -63,8 +85,8 @@ const UploadPage = () => {
           });
           const headers = preview.length > 0 ? Object.keys(preview[0]) : [];
           resolve({ headers, preview, totalRows });
-        } catch (err) {
-          reject(err);
+        } catch (parseErr) {
+          reject(parseErr);
         }
       };
       reader.onerror = reject;
@@ -73,15 +95,22 @@ const UploadPage = () => {
   };
 
   /**
-   * Upload file to server and get sessionId
+   * Upload file to server and get sessionId.
+   * Uses AbortController so it can be cancelled if user picks a different file.
    */
   const uploadToServer = async (file, ext) => {
+    // Cancel any previous in-flight upload first
+    cancelUpload();
+
+    const abortController = new AbortController();
+    uploadAbortRef.current = abortController;
+
     setUploading(true);
     setUploadFailed(false);
     try {
       const formData = new FormData();
       formData.append('file', file);
-      const response = await uploadApi.upload(formData);
+      const response = await uploadApi.upload(formData, abortController.signal);
       const responseData = response.data.data;
 
       // Update Redux with the real sessionId from server
@@ -97,22 +126,26 @@ const UploadPage = () => {
         sessionId: responseData.sessionId ?? null,
         allRows: null,
       }));
-      setPendingFile(null); // upload succeeded, no need to keep file ref
+      setPendingFile(null);
     } catch (err) {
+      // If this was a user-initiated cancel, silently ignore
+      if (err.name === 'CanceledError' || err.code === 'ERR_CANCELED') {
+        return;
+      }
       const msg = err.response?.data?.error;
       toast.error(typeof msg === 'string' ? msg : 'Server upload failed. Click "Retry Upload" to try again.');
       setUploadFailed(true);
-      setPendingFile(file); // keep file for retry
+      setPendingFile(file);
     } finally {
       setUploading(false);
     }
   };
 
   const handleFileSelect = async (selectedFile) => {
+    // Always cancel any in-flight upload when selecting a new file
+    handleReset();
+
     if (!selectedFile) {
-      dispatch(clearUploadPreview());
-      setUploadFailed(false);
-      setPendingFile(null);
       return;
     }
 
@@ -378,7 +411,7 @@ const UploadPage = () => {
                   File parsed successfully. Unrecognized columns will simply have no matching rules.
                 </div>
                 <div className="flex items-center gap-3">
-                  <Button variant="secondary" onClick={() => { dispatch(clearUploadPreview()); setUploadFailed(false); setPendingFile(null); }}>
+                  <Button variant="secondary" onClick={handleReset}>
                     Choose Different File
                   </Button>
                   {uploading && !sessionId ? (
