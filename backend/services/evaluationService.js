@@ -112,12 +112,22 @@ class EvaluationService {
       // 2. Parse file if needed
       const parseStart = Date.now();
       if (filePath) {
-        const parsed = parseExcelFile(filePath);
-        orders = parsed.rows;
-        console.log(`[Eval] ${evaluationId} - Parsed ${orders.length} rows in ${Date.now() - parseStart}ms`);
-        
+        const tempDoc = await TempUpload.findOne({ filePath }).lean();
+
+        if (tempDoc?.parseStatus === 'ready' && tempDoc?.parsedRows?.length > 0) {
+          // ✅ FAST PATH: Background parse already completed — use cached rows instantly
+          orders = tempDoc.parsedRows;
+          console.log(`[Eval] ${evaluationId} - Used cached parse (${orders.length} rows) in ${Date.now() - parseStart}ms`);
+        } else {
+          // ⏳ FALLBACK: Background parse not ready yet — parse now
+          console.log(`[Eval] ${evaluationId} - Cache not ready (status: ${tempDoc?.parseStatus}), parsing from disk...`);
+          const parsed = parseExcelFile(filePath);
+          orders = parsed.rows;
+          console.log(`[Eval] ${evaluationId} - Disk parse done: ${orders.length} rows in ${Date.now() - parseStart}ms`);
+        }
+
         await evaluationRepository.update(evaluationId, { totalOrders: orders.length });
-        
+
         // Cleanup temp file and DB record
         await TempUpload.findOneAndDelete({ filePath });
         cleanupFile(filePath);

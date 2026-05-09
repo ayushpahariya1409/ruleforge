@@ -12,6 +12,17 @@ const TempUploadSchema = new mongoose.Schema({
   },
   fileName: String,
   totalRows: Number,
+  // Cached full parse result — populated in background after upload.
+  // When present, evaluate skips the 20s re-parse step.
+  parsedRows: {
+    type: mongoose.Schema.Types.Mixed,
+    default: null,
+  },
+  parseStatus: {
+    type: String,
+    enum: ['pending', 'ready', 'failed'],
+    default: 'pending',
+  },
   createdAt: {
     type: Date,
     default: Date.now,

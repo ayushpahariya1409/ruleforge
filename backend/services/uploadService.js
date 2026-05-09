@@ -1,4 +1,4 @@
-const { parseExcelPreview, cleanupFile } = require('../utils/excelParser');
+const { parseExcelPreview, parseExcelFile, cleanupFile } = require('../utils/excelParser');
 const ApiError = require('../utils/ApiError');
 const TempUpload = require('../models/TempUpload');
 
@@ -24,16 +24,21 @@ class UploadService {
     }
 
     try {
-      // Parse ONLY the first 10 rows for preview — runs in ~0.3s even for 100k row files.
-      // The file stays on disk; evaluate will do the full parse when needed.
+      // Step 1: Fast preview — only reads 10 rows (~0.3s even for 100k row files)
       const preview = parseExcelPreview(file.path);
 
-      // Store just the file path — NOT the 50k rows — in MongoDB.
+      // Step 2: Save session reference immediately
       const tempUpload = await TempUpload.create({
         filePath: file.path,
         fileName: file.originalname,
         totalRows: preview.totalRows,
+        parseStatus: 'pending',
       });
+
+      // Step 3: FIRE & FORGET — parse full file in background
+      // This runs while user is reviewing the preview, so by the time they
+      // click Evaluate, the data is already cached and Evaluate is instant.
+      this._parseFullFileInBackground(tempUpload._id, file.path);
 
       return {
         sessionId: tempUpload._id.toString(),
@@ -46,6 +51,27 @@ class UploadService {
       cleanupFile(file.path);
       if (error instanceof ApiError) throw error;
       throw ApiError.badRequest(`Failed to parse Excel file: ${error.message}`);
+    }
+  }
+
+  /**
+   * Parses the full Excel file in the background and caches rows in MongoDB.
+   * Runs after the upload response is already sent to the client.
+   */
+  async _parseFullFileInBackground(sessionId, filePath) {
+    try {
+      console.log(`[Upload] Background parse started for session ${sessionId}`);
+      const start = Date.now();
+      const parsed = parseExcelFile(filePath);
+      await TempUpload.findByIdAndUpdate(sessionId, {
+        parsedRows: parsed.rows,
+        totalRows: parsed.totalRows,
+        parseStatus: 'ready',
+      });
+      console.log(`[Upload] Background parse done for ${sessionId}: ${parsed.totalRows} rows in ${Date.now() - start}ms`);
+    } catch (err) {
+      console.error(`[Upload] Background parse FAILED for ${sessionId}:`, err.message);
+      await TempUpload.findByIdAndUpdate(sessionId, { parseStatus: 'failed' });
     }
   }
 
